@@ -1,8 +1,11 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
+# 
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kaspadotnet.Examples", "Kaspadotnet.Examples\Kaspadotnet.Examples.csproj", "{2DA80D8A-1F35-4AC1-B392-A127046182D0}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kaspadotnet.Clients", "Kaspadotnet.Clients\Kaspadotnet.Clients.csproj", "{DAD44622-6B45-4DB1-9368-130DA2FE714F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kaspadotnet.Clients.Tests", "Kaspadotnet.Clients.Tests\Kaspadotnet.Clients.Tests.csproj", "{8B821EFA-660E-44B5-8269-C0F29BCF2E19}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -18,5 +21,9 @@ Global
 		{DAD44622-6B45-4DB1-9368-130DA2FE714F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DAD44622-6B45-4DB1-9368-130DA2FE714F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DAD44622-6B45-4DB1-9368-130DA2FE714F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8B821EFA-660E-44B5-8269-C0F29BCF2E19}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8B821EFA-660E-44B5-8269-C0F29BCF2E19}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8B821EFA-660E-44B5-8269-C0F29BCF2E19}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8B821EFA-660E-44B5-8269-C0F29BCF2E19}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
