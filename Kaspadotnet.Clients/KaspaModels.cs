@@ -36,6 +36,82 @@ public sealed record KaspaNodeInfo(
     public bool P2pIdIsHashed { get; init; }
 }
 
+/// <summary>
+/// Outpoint referenced by a transaction input. <see cref="TransactionId"/> is hex.
+/// </summary>
+public sealed record KaspaPreviousOutpoint
+{
+    public string TransactionId { get; init; } = "";
+
+    public uint Index { get; init; }
+}
+
+/// <summary>
+/// Transaction input. <see cref="SignatureScript"/> is hex.
+/// <see cref="Sequence"/> is a consensus uint64. <see cref="SigOpCount"/> is one byte.
+/// </summary>
+public sealed record KaspaTransactionInput
+{
+    public KaspaPreviousOutpoint PreviousOutpoint { get; init; } = new();
+
+    public string SignatureScript { get; init; } = "";
+
+    public ulong Sequence { get; init; }
+
+    public byte SigOpCount { get; init; }
+}
+
+/// <summary>
+/// Script and version on an output. <see cref="ScriptPublicKey"/> is hex.
+/// Version 0 is Schnorr, 1 is ECDSA, 8 is P2SH.
+/// </summary>
+public sealed record KaspaScriptPublicKey
+{
+    public uint Version { get; init; }
+
+    public string ScriptPublicKey { get; init; } = "";
+}
+
+/// <summary>Transaction output. <see cref="Amount"/> is sompi.</summary>
+public sealed record KaspaTransactionOutput
+{
+    public ulong Amount { get; init; }
+
+    public KaspaScriptPublicKey ScriptPublicKey { get; init; } = new();
+}
+
+/// <summary>
+/// Kaspa transaction as JSON for <c>POST /transactions</c> and kaspad
+/// <c>submitTransaction</c>. Hex fields have no <c>0x</c> prefix.
+/// Property names serialize as camelCase
+/// (<c>lockTime</c>, <c>subnetworkId</c>, <c>sigOpCount</c>, <c>scriptPublicKey</c>).
+/// </summary>
+public sealed record KaspaTransaction
+{
+    /// <summary>Consensus transaction version. The public API sends <c>0</c>.</summary>
+    public uint Version { get; init; }
+
+    public IReadOnlyList<KaspaTransactionInput> Inputs { get; init; } = Array.Empty<KaspaTransactionInput>();
+
+    public IReadOnlyList<KaspaTransactionOutput> Outputs { get; init; } = Array.Empty<KaspaTransactionOutput>();
+
+    public ulong LockTime { get; init; }
+
+    /// <summary>Subnetwork id hex. Native transfers use 20 zero bytes.</summary>
+    public string SubnetworkId { get; init; } = "";
+
+    public ulong Gas { get; init; }
+
+    /// <summary>Optional payload hex. Empty for a native transfer.</summary>
+    public string Payload { get; init; } = "";
+}
+
+/// <summary>
+/// Result of submitting a transaction. <see cref="TransactionId"/> is set when the
+/// node accepts it. <see cref="Error"/> is the node message when it does not.
+/// </summary>
+public sealed record KaspaSubmitTransactionResult(string? TransactionId, string? Error);
+
 /// <summary>Subset of kaspad <c>GetBlockDagInfo</c> / <c>GET /info/blockdag</c>.</summary>
 public sealed record KaspaBlockDagInfo(
     string? NetworkName,

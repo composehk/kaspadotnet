@@ -17,6 +17,7 @@ namespace Kaspadotnet.Clients;
 /// <item><c>GET /addresses/{address}/utxos</c> and <c>POST /addresses/utxos</c></item>
 /// <item><c>GET /info/kaspad</c></item>
 /// <item><c>GET /info/blockdag</c></item>
+/// <item><c>POST /transactions</c></item>
 /// </list>
 /// The public API rate-limits UTXO routes. One address per call is enough for
 /// wallets; do not scrape from this client. gRPC via <see cref="KaspaRpcClient"/>
@@ -118,6 +119,51 @@ public sealed class KaspaPublicRestClient : IDisposable
         {
             P2pIdIsHashed = hashed,
         };
+    }
+
+    /// <summary>
+    /// POST <c>{baseUrl}/transactions</c> with
+    /// <c>{"transaction":{...},"allowOrphan":false}</c>.
+    /// Parses <c>{"transactionId":...}</c> or <c>{"error":...}</c>.
+    /// A node error is returned on <see cref="KaspaSubmitTransactionResult.Error"/>
+    /// and is not thrown. This method does not retry and does not sign.
+    /// </summary>
+    public async Task<KaspaSubmitTransactionResult> SubmitTransactionAsync(
+        KaspaTransaction transaction,
+        bool allowOrphan = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+        var payload = JsonSerializer.Serialize(
+            new SubmitTransactionBody { Transaction = transaction, AllowOrphan = allowOrphan },
+            JsonOptions);
+        using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+        using var response = await _http.PostAsync("transactions", content, cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        SubmitTransactionResponseDto? dto;
+        try
+        {
+            dto = JsonSerializer.Deserialize<SubmitTransactionResponseDto>(body, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new KaspaRpcException("Could not parse REST response for transactions.", ex);
+        }
+
+        if (dto is null)
+        {
+            throw new KaspaRpcException("Empty REST response for transactions.");
+        }
+
+        if (!response.IsSuccessStatusCode
+            && string.IsNullOrEmpty(dto.TransactionId)
+            && string.IsNullOrEmpty(dto.Error))
+        {
+            throw new KaspaRpcException($"REST {(int)response.StatusCode} for transactions: {Trim(body)}");
+        }
+
+        return new KaspaSubmitTransactionResult(dto.TransactionId, dto.Error);
     }
 
     public async Task<KaspaBlockDagInfo> GetBlockDagInfoAsync(CancellationToken cancellationToken = default)
@@ -294,6 +340,18 @@ public sealed class KaspaPublicRestClient : IDisposable
         public bool? IsSynced { get; set; }
         public string? P2pId { get; set; }
         public string? P2pIdHashed { get; set; }
+    }
+
+    private sealed class SubmitTransactionBody
+    {
+        public KaspaTransaction? Transaction { get; set; }
+        public bool AllowOrphan { get; set; }
+    }
+
+    private sealed class SubmitTransactionResponseDto
+    {
+        public string? TransactionId { get; set; }
+        public string? Error { get; set; }
     }
 
     private sealed class BlockDagDto

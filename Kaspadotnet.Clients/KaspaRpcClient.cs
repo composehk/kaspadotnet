@@ -56,8 +56,8 @@ public sealed class KaspaRpcClientOptions
 /// <remarks>
 /// Status: legacy / WIP relative to current rusty-kaspa. The protos shipped in
 /// this repo are a protowire snapshot. They still compile and can call
-/// <c>GetBalanceByAddress</c>, <c>GetUtxosByAddresses</c>, <c>GetInfo</c>, and
-/// <c>GetBlockDagInfo</c> on a node that serves a compatible gRPC port
+/// <c>GetBalanceByAddress</c>, <c>GetUtxosByAddresses</c>, <c>GetInfo</c>,
+/// <c>GetBlockDagInfo</c>, and <c>submitTransaction</c> on a node that serves a compatible gRPC port
 /// (default <c>localhost:16110</c>). rusty-kaspa's primary public API is wRPC,
 /// and this snapshot is not a full current schema.
 /// For balance and UTXOs without a local node, use <see cref="KaspaPublicRestClient"/>
@@ -188,6 +188,39 @@ public sealed class KaspaRpcClient : IDisposable
             IsSynced: null);
     }
 
+    /// <summary>
+    /// kaspad protowire <c>submitTransaction</c>. Params are the transaction and
+    /// <paramref name="allowOrphan"/>. A node RPC error is returned on
+    /// <see cref="KaspaSubmitTransactionResult.Error"/> instead of thrown.
+    /// Transport failures still throw <see cref="KaspaRpcException"/>.
+    /// </summary>
+    public async Task<KaspaSubmitTransactionResult> SubmitTransactionAsync(
+        KaspaTransaction transaction,
+        bool allowOrphan = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+        var response = await CallAsync(
+            new KaspadMessage
+            {
+                SubmitTransactionRequest = new SubmitTransactionRequestMessage
+                {
+                    Transaction = ToRpcTransaction(transaction),
+                    AllowOrphan = allowOrphan,
+                },
+            },
+            KaspadMessage.PayloadOneofCase.SubmitTransactionResponse,
+            message => message.SubmitTransactionResponse,
+            body => body.Error,
+            cancellationToken,
+            throwOnRpcError: false).ConfigureAwait(false);
+
+        var error = response.Error;
+        return new KaspaSubmitTransactionResult(
+            string.IsNullOrEmpty(response.TransactionId) ? null : response.TransactionId,
+            error is null || string.IsNullOrEmpty(error.Message) ? null : error.Message);
+    }
+
     public async Task<KaspaBlockDagInfo> GetBlockDagInfoAsync(CancellationToken cancellationToken = default)
     {
         var response = await CallAsync(
@@ -227,7 +260,8 @@ public sealed class KaspaRpcClient : IDisposable
         KaspadMessage.PayloadOneofCase expected,
         Func<KaspadMessage, T> project,
         Func<T, RPCError?> errorOf,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool throwOnRpcError = true)
     {
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -266,7 +300,7 @@ public sealed class KaspaRpcClient : IDisposable
 
             var body = project(message);
             var error = errorOf(body);
-            if (error != null && !string.IsNullOrEmpty(error.Message))
+            if (throwOnRpcError && error != null && !string.IsNullOrEmpty(error.Message))
             {
                 throw new KaspaRpcException(error.Message);
             }
@@ -277,6 +311,56 @@ public sealed class KaspaRpcClient : IDisposable
         {
             _gate.Release();
         }
+    }
+
+    private static RpcTransaction ToRpcTransaction(KaspaTransaction transaction)
+    {
+        var rpc = new RpcTransaction
+        {
+            Version = transaction.Version,
+            LockTime = transaction.LockTime,
+            SubnetworkId = transaction.SubnetworkId ?? string.Empty,
+            Gas = transaction.Gas,
+            Payload = transaction.Payload ?? string.Empty,
+        };
+
+        if (transaction.Inputs is not null)
+        {
+            foreach (var input in transaction.Inputs)
+            {
+                var outpoint = input.PreviousOutpoint;
+                rpc.Inputs.Add(new RpcTransactionInput
+                {
+                    PreviousOutpoint = new RpcOutpoint
+                    {
+                        TransactionId = outpoint?.TransactionId ?? string.Empty,
+                        Index = outpoint?.Index ?? 0,
+                    },
+                    SignatureScript = input.SignatureScript ?? string.Empty,
+                    Sequence = input.Sequence,
+                    SigOpCount = input.SigOpCount,
+                });
+            }
+        }
+
+        if (transaction.Outputs is not null)
+        {
+            foreach (var output in transaction.Outputs)
+            {
+                var script = output.ScriptPublicKey;
+                rpc.Outputs.Add(new RpcTransactionOutput
+                {
+                    Amount = output.Amount,
+                    ScriptPublicKey = new RpcScriptPublicKey
+                    {
+                        Version = script?.Version ?? 0,
+                        ScriptPublicKey = script?.ScriptPublicKey ?? string.Empty,
+                    },
+                });
+            }
+        }
+
+        return rpc;
     }
 
     private static IReadOnlyList<string> Normalize(IEnumerable<string> addresses)

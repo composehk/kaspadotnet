@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Kaspadotnet.Clients.Shared;
 using Xunit;
 
@@ -195,6 +196,57 @@ public class KaspaClientTests
     }
 
     [Fact]
+    public async Task Rest_submit_transaction_posts_camel_case_body_and_reads_id()
+    {
+        var handler = new RecordingHandler("""{"transactionId":"abc123def"}""");
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("http://rest.test/") };
+        using var client = new KaspaPublicRestClient(http);
+        var tx = SampleTransaction();
+
+        var result = await client.SubmitTransactionAsync(tx);
+
+        Assert.Equal("abc123def", result.TransactionId);
+        Assert.Null(result.Error);
+        Assert.Equal("POST", handler.Method);
+        Assert.Equal("/transactions", handler.PathAndQuery);
+        using var doc = JsonDocument.Parse(handler.RequestBody!);
+        Assert.False(doc.RootElement.GetProperty("allowOrphan").GetBoolean());
+        var body = doc.RootElement.GetProperty("transaction");
+        Assert.Equal(0u, body.GetProperty("version").GetUInt32());
+        Assert.Equal(0UL, body.GetProperty("lockTime").GetUInt64());
+        Assert.Equal(0UL, body.GetProperty("gas").GetUInt64());
+        Assert.Equal("", body.GetProperty("payload").GetString());
+        Assert.Equal("0000000000000000000000000000000000000000", body.GetProperty("subnetworkId").GetString());
+        var input = body.GetProperty("inputs")[0];
+        Assert.Equal("ef62efbc2825d3ef9ec1cf9b80506876ac077b64b11a39c8ef5e028415444dc9", input.GetProperty("previousOutpoint").GetProperty("transactionId").GetString());
+        Assert.Equal(3u, input.GetProperty("previousOutpoint").GetProperty("index").GetUInt32());
+        Assert.Equal("41aa", input.GetProperty("signatureScript").GetString());
+        Assert.Equal(0UL, input.GetProperty("sequence").GetUInt64());
+        Assert.Equal(1, input.GetProperty("sigOpCount").GetByte());
+        var output = body.GetProperty("outputs")[0];
+        Assert.Equal(1000UL, output.GetProperty("amount").GetUInt64());
+        Assert.Equal(0u, output.GetProperty("scriptPublicKey").GetProperty("version").GetUInt32());
+        Assert.Equal("20aa", output.GetProperty("scriptPublicKey").GetProperty("scriptPublicKey").GetString());
+        Assert.DoesNotContain("api.kaspa.org", handler.PathAndQuery, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rest_submit_transaction_returns_error_json()
+    {
+        var handler = new RecordingHandler("""{"error":"signature script is empty"}""", HttpStatusCode.BadRequest);
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("http://rest.test/") };
+        using var client = new KaspaPublicRestClient(http);
+
+        var result = await client.SubmitTransactionAsync(SampleTransaction(), allowOrphan: true);
+
+        Assert.Null(result.TransactionId);
+        Assert.Equal("signature script is empty", result.Error);
+        Assert.Equal("POST", handler.Method);
+        Assert.Equal("/transactions", handler.PathAndQuery);
+        Assert.Contains("\"allowOrphan\":true", handler.RequestBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Rest_http_error_is_a_rpc_exception()
     {
         var handler = new RecordingHandler("nope", HttpStatusCode.BadGateway);
@@ -205,6 +257,41 @@ public class KaspaClientTests
 
         Assert.Contains("502", error.Message, StringComparison.Ordinal);
     }
+
+    private static KaspaTransaction SampleTransaction() => new()
+    {
+        Version = 0,
+        Inputs = new[]
+        {
+            new KaspaTransactionInput
+            {
+                PreviousOutpoint = new KaspaPreviousOutpoint
+                {
+                    TransactionId = "ef62efbc2825d3ef9ec1cf9b80506876ac077b64b11a39c8ef5e028415444dc9",
+                    Index = 3,
+                },
+                SignatureScript = "41aa",
+                Sequence = 0,
+                SigOpCount = 1,
+            },
+        },
+        Outputs = new[]
+        {
+            new KaspaTransactionOutput
+            {
+                Amount = 1000,
+                ScriptPublicKey = new KaspaScriptPublicKey
+                {
+                    Version = 0,
+                    ScriptPublicKey = "20aa",
+                },
+            },
+        },
+        LockTime = 0,
+        SubnetworkId = "0000000000000000000000000000000000000000",
+        Gas = 0,
+        Payload = "",
+    };
 
     private sealed class RecordingHandler : HttpMessageHandler
     {
