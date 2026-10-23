@@ -12,8 +12,9 @@ namespace Kaspadotnet.Clients.Shared;
 /// <c>kaspadev</c>. The payload uses Kaspa's bech32 charset
 /// <c>qpzry9x8gf2tvdw0s3jn54khce6mua7l</c> and the CashAddr polymod from
 /// rusty-kaspa <c>crypto/addresses</c> (not Bitcoin BIP-173).
-/// Current wallet payloads are 61 characters (Schnorr or script hash) or 63
-/// (ECDSA). Length is not hard-coded so a future version still checksums.
+/// Addresses are lowercase-only. After the 40-bit checksum, the decoded payload
+/// must be version 0 and 32 bytes (Schnorr), version 1 and 33 bytes (ECDSA), or
+/// version 8 and 32 bytes (P2SH), matching kaswallet <c>KaspaBech32</c>.
 /// Do not copy key-to-script rules here; keep those in kaswallet and compare
 /// behavior when either side changes.
 /// </remarks>
@@ -97,9 +98,9 @@ public sealed class KaspaAddress
             throw new ArgumentNullException(nameof(address));
         }
 
-        var text = address.Trim().ToLowerInvariant();
+        var text = address.Trim();
         var colon = text.IndexOf(':');
-        if (colon <= 0 || colon != text.LastIndexOf(':'))
+        if (colon <= 0 || colon != text.LastIndexOf(':') || colon == text.Length - 1)
         {
             throw new KaspaAddressException("A Kaspa address must look like {prefix}:{payload}, for example kaspa:qqqq...");
         }
@@ -112,9 +113,14 @@ public sealed class KaspaAddress
                 $"Unknown Kaspa prefix '{prefix}'. Expected one of: {string.Join(", ", Prefixes)}.");
         }
 
-        if (payload.Length <= ChecksumLength)
+        if (payload.Length < ChecksumLength)
         {
             throw new KaspaAddressException("Kaspa address payload is too short to include a checksum.");
+        }
+
+        if (payload.Length > 150)
+        {
+            throw new KaspaAddressException("Kaspa address payload is longer than Kaspa bech32 allows.");
         }
 
         var data = new byte[payload.Length];
@@ -139,7 +145,47 @@ public sealed class KaspaAddress
             throw new KaspaAddressException("Kaspa address checksum does not match the prefix and payload.");
         }
 
+        var decoded = Convert5To8(data.AsSpan(0, split));
+        if (decoded.Length == 0 || !IsStandardPayload(decoded[0], decoded.Length - 1))
+        {
+            throw new KaspaAddressException(
+                "Kaspa address version or payload length is not Schnorr (0, 32 bytes), ECDSA (1, 33 bytes), or P2SH (8, 32 bytes).");
+        }
+
         return new KaspaAddress(prefix, payload, NetworkOf(prefix));
+    }
+
+    /// <summary>
+    /// Version byte and payload length accepted by kaswallet <c>KaspaBech32.IsStandardPayload</c>.
+    /// </summary>
+    private static bool IsStandardPayload(byte version, int payloadLength) => version switch
+    {
+        0 => payloadLength == 32,
+        1 => payloadLength == 33,
+        8 => payloadLength == 32,
+        _ => false,
+    };
+
+    /// <summary>CashAddr 5-bit to 8-bit conversion. Leftover padding bits are discarded.</summary>
+    private static byte[] Convert5To8(ReadOnlySpan<byte> payload)
+    {
+        var eightBit = new byte[payload.Length * 5 / 8];
+        var index = 0;
+        var buffer = 0;
+        var bits = 0;
+        foreach (var value in payload)
+        {
+            buffer = (buffer << 5) | (value & 0x1F);
+            bits += 5;
+            while (bits >= 8)
+            {
+                bits -= 8;
+                eightBit[index++] = (byte)((buffer >> bits) & 0xFF);
+                buffer &= (1 << bits) - 1;
+            }
+        }
+
+        return eightBit;
     }
 
     public override string ToString() => $"{Prefix}:{Payload}";

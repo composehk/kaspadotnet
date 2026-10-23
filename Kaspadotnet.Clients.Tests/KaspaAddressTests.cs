@@ -27,12 +27,13 @@ public class KaspaAddressTests
     }
 
     [Fact]
-    public void Accepts_uppercase_prefix_and_payload()
+    public void Rejects_uppercase_prefix_and_payload()
     {
-        var parsed = KaspaAddress.Parse(ZeroPubKey.ToUpperInvariant());
+        var upper = ZeroPubKey.ToUpperInvariant();
 
-        Assert.Equal(ZeroPubKey, parsed.ToString());
-        Assert.Equal(KaspaNetwork.Mainnet, parsed.Network);
+        Assert.False(KaspaAddress.IsValid(upper));
+        Assert.False(KaspaAddress.TryParse(upper, out _));
+        Assert.Throws<KaspaAddressException>(() => KaspaAddress.Parse(upper));
     }
 
     [Fact]
