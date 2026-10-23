@@ -4,6 +4,11 @@ using Protowire;
 
 namespace Kaspadontnet.Clients;
 
+/// <summary>
+/// Low-level kaspad gRPC channel (legacy protowire). Prefer
+/// <see cref="Kaspadotnet.Clients.KaspaRpcClient"/> for request helpers, or
+/// <see cref="Kaspadotnet.Clients.KaspaPublicRestClient"/> when no local node is running.
+/// </summary>
 public class KaspadClient : RPC.RPCClient, IDisposable
 {
     public RPC.RPCClient Client { get; private set; }
